@@ -31,6 +31,24 @@ log()   { printf '%s %s\n' "$LOG_PREFIX" "$*"; }
 warn()  { printf '%s [WARN] %s\n' "$LOG_PREFIX" "$*" >&2; }
 die()   { printf '%s [ERROR] %s\n' "$LOG_PREFIX" "$*" >&2; exit 1; }
 
+usage() {
+  cat <<'EOF' >&2
+Cloudflare Origin Lock (nftables)
+
+Usage:
+  sudo ./cloudflare-origin-lock.sh <apply|update|revert|status>
+
+Run without arguments to open an interactive menu.
+
+One-line installer (curl):
+  curl -fsSL https://raw.githubusercontent.com/N0tMaggi/Cloudflare-Origin-Lock/main/cloudflare-origin-lock.sh | sudo bash -s -- apply
+
+One-line installer (wget):
+  wget -qO- https://raw.githubusercontent.com/N0tMaggi/Cloudflare-Origin-Lock/main/cloudflare-origin-lock.sh | sudo bash -s -- apply
+EOF
+  exit "${1:-1}"
+}
+
 # ========= ROOT & DEPENDENCIES =========
 require_root() { [[ $EUID -eq 0 ]] || die "Run as root (sudo)."; }
 have_cmd()     { command -v "$1" >/dev/null 2>&1; }
@@ -268,7 +286,8 @@ main() {
     revert) revert_rules ;;
     status) status_short ;;
     "" )    interactive_menu ;;
-    * )     die "Usage: $0 {apply|update|revert|status}" ;;
+    -h|--help) usage 0 ;;
+    * )     usage 1 ;;
   esac
 }
 

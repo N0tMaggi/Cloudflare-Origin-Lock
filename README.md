@@ -40,6 +40,20 @@ All backups are only created or restored when needed. Removing the script will n
 
 ## Usage
 
+### Quick One-Liners
+
+Fetch and apply the script in one step (requires sudo/root):
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/N0tMaggi/Cloudflare-Origin-Lock/main/cloudflare-origin-lock.sh | sudo bash -s -- apply
+```
+
+or
+
+```bash
+wget -qO- https://raw.githubusercontent.com/N0tMaggi/Cloudflare-Origin-Lock/main/cloudflare-origin-lock.sh | sudo bash -s -- apply
+```
+
 ```bash
 sudo ./cloudflare-origin-lock.sh <command>
 ```
