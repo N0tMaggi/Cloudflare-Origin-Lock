@@ -1,29 +1,45 @@
-# Cloudflare Origin Lock (nftables)
+# Cloudflare Origin Lock (Linux nftables & Windows Firewall)
 
-`cloudflare-origin-lock.sh` is a self-contained hardening script for Debian/Ubuntu servers that only allows HTTP(S) traffic from Cloudflare's official IP ranges. It fetches Cloudflare's latest CIDR lists, writes nftables sets, and keeps the configuration transactional so you can safely apply, update, or roll back with a single command.
+`cloudflare-origin-lock.sh` hardens Debian/Ubuntu with nftables, and `cloudflare-origin-lock.ps1` does the same on Windows Server with Windows Defender Firewall. Both only allow HTTP(S) traffic from Cloudflare's official IP ranges and provide safe apply/update/revert flows.
 
 ---
 
 ## Highlights
 
-- Enforces that only Cloudflare edges can reach ports 80 and 443 while preserving SSH access.
-- Performs transactional applies/updates with automatic rollback on failure.
-- Detects your SSH listening port so you can't accidentally lock yourself out.
-- Stores state under `/var/lib/cloudflare-origin-lock` and keeps working backups for reversions.
-- Supports unattended refreshes (cron/systemd timer) via the `update` action.
+- Enforces that only Cloudflare edges can reach ports 80 and 443 while preserving SSH/WinRM access.
+- Linux: transactional applies/updates with nftables syntax checks and rollback.
+- Windows: creates paired allow/block rules in Windows Defender Firewall with mutex locking.
+- Detects your SSH listening port on Linux so you can't accidentally lock yourself out.
+- Stores state under `/var/lib/cloudflare-origin-lock` (Linux) or `C:\ProgramData\Cloudflare-Origin-Lock` (Windows).
+- Supports unattended refreshes (cron/systemd timer on Linux; Task Scheduler on Windows) via the `update` action.
 
 ---
 
 ## Requirements
 
-- Debian or Ubuntu system using `nftables`.
-- Root privileges (`sudo` or direct root shell).
-- System utilities: `curl`, `nft`, `systemctl`, `flock`, `awk`, `sed`, `wc`, `grep`.
-- Outbound HTTPS access to `www.cloudflare.com` to download the IP lists.
+<details>
+<summary>Linux (Debian/Ubuntu)</summary>
+
+- `nftables` in use
+- Root privileges (`sudo` or direct root shell)
+- Tools: `curl`, `nft`, `systemctl`, `flock`, `awk`, `sed`, `wc`, `grep`
+- Outbound HTTPS to `www.cloudflare.com` for IP lists
+</details>
+
+<details>
+<summary>Windows Server</summary>
+
+- Windows Defender Firewall available (`Get-NetFirewallRule`)
+- Elevated PowerShell / Administrator shell
+- Outbound HTTPS to `www.cloudflare.com`
+</details>
 
 ---
 
 ## Files and Directories Touched
+
+<details>
+<summary>Linux paths</summary>
 
 | Path | Purpose |
 | ---- | ------- |
@@ -34,7 +50,17 @@
 | `/var/lib/cloudflare-origin-lock/installed` | Timestamp marker indicating the script is applied. |
 | `/var/lock/cloudflare-origin-lock.lck` | File lock to prevent concurrent runs. |
 
-All backups are only created or restored when needed. Removing the script will not delete these files automatically, so you retain full control.
+Backups are only created or restored when needed. Removing the script will not delete these files automatically.
+</details>
+
+<details>
+<summary>Windows artifacts</summary>
+
+- Marker: `C:\ProgramData\Cloudflare-Origin-Lock\installed.txt`
+- Firewall rules (group "Cloudflare Origin Lock"):
+  - `CF-Origin-Lock-Allow` (allow Cloudflare on TCP 80/443, override block rules)
+  - `CF-Origin-Lock-Block` (block everyone else on TCP 80/443)
+</details>
 
 ---
 
@@ -42,7 +68,8 @@ All backups are only created or restored when needed. Removing the script will n
 
 ### Quick One-Liners
 
-Fetch and apply the script in one step (requires sudo/root):
+<details>
+<summary>Linux (Debian/Ubuntu, sudo/root)</summary>
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/N0tMaggi/Cloudflare-Origin-Lock/main/cloudflare-origin-lock.sh | sudo bash -s -- apply
@@ -55,54 +82,59 @@ wget -qO- https://raw.githubusercontent.com/N0tMaggi/Cloudflare-Origin-Lock/main
 ```
 
 ```bash
-sudo ./cloudflare-origin-lock.sh <command>
+sudo ./cloudflare-origin-lock.sh <apply|update|revert|status>
+```
+</details>
+
+<details>
+<summary>Windows Server (elevated PowerShell)</summary>
+
+```powershell
+irm https://raw.githubusercontent.com/N0tMaggi/Cloudflare-Origin-Lock/main/cloudflare-origin-lock.ps1 -OutFile cloudflare-origin-lock.ps1; `
+irm https://raw.githubusercontent.com/N0tMaggi/Cloudflare-Origin-Lock/main/cloudflare-origin-lock.bat -OutFile cloudflare-origin-lock.bat; `
+.\cloudflare-origin-lock.bat apply
 ```
 
-Supported commands:
+Then:
 
-### `apply`
+```powershell
+.\cloudflare-origin-lock.bat update   # refresh Cloudflare IPs
+.\cloudflare-origin-lock.bat status   # show state
+.\cloudflare-origin-lock.bat revert   # remove rules
+```
+</details>
 
-Bootstraps the configuration from scratch:
+### Commands
 
-1. Downloads the current IPv4 and IPv6 ranges published by Cloudflare.
-2. Builds an nftables table `inet cf_origin_lock` with two sets: `cf4` and `cf6`.
-3. Creates an input chain that:
-   - accepts established/related traffic,
-   - allows localhost traffic,
-   - keeps your SSH port (autodetected, fallback to 22) open,
-   - accepts HTTP/S only when the source IP belongs to Cloudflare,
-   - drops all other HTTP/S attempts.
-4. Ensures `/etc/nftables.conf` includes `/etc/nftables.d/*.nft`.
-5. Reloads nftables via `systemctl reload nftables` (falls back to `restart`).
-6. Writes an installation marker with the current timestamp.
+<details>
+<summary>Linux (nftables)</summary>
 
-If nftables fails to reload, the script restores backups and aborts with an error.
+- `apply`: download Cloudflare IPv4/IPv6 ranges, render `cf_origin_lock` table/sets, add include to `/etc/nftables.conf` if missing, reload nftables transactionally, write marker.
+- `update`: refresh IP ranges, replace sets file with rollback on reload failure.
+- `revert`: restore backed-up configs or remove generated files, reload nftables, clear marker.
+- `status`: show install time (marker) and first 100 lines of `nft list ruleset`.
+- Interactive: run with no arguments to use a select menu for the same actions.
+</details>
 
-### `update`
+<details>
+<summary>Windows (Windows Defender Firewall)</summary>
 
-Re-fetches Cloudflare ranges and swaps them in place. A temporary backup of the existing sets file is kept; if the reload fails, the script rolls back the old rules automatically. Use this regularly (e.g., cron) to track Cloudflare IP updates.
-
-### `revert`
-
-Removes the generated sets file and restores any backup of `/etc/nftables.conf`, then reloads nftables. This returns the firewall to its previous state and removes the installation marker.
-
-### `status`
-
-Shows whether the lock is installed, when it was last applied, and prints the first 100 lines of the live ruleset so you can verify the active chain.
-
-### Interactive Mode
-
-Run the script with no arguments to enter a simple `select` menu (`apply`, `update`, `revert`, `status`, `exit`). The same safeguards apply.
+- `apply`: fetch Cloudflare IPv4/IPv6, create allow rule (`CF-Origin-Lock-Allow`, TCP 80/443, remote Cloudflare CIDRs, override block rules) and block rule (`CF-Origin-Lock-Block`, TCP 80/443, remote Any), write marker.
+- `update`: re-run apply with fresh CIDRs (idempotent).
+- `revert`: remove all rules in group "Cloudflare Origin Lock" and delete marker.
+- `status`: show marker timestamp, report presence of allow/block rules and first 10 remote addresses in the allow rule.
+</details>
 
 ---
 
 ## Safety Features
 
-- **Idempotent detection** – rerunning `apply` is safe; if the include line already exists it won't be duplicated.
-- **nftables syntax validation** – rules are compiled with `nft -c` before being installed.
-- **SSH guardrails** – if your SSH port is 80 or 443, the script aborts to avoid self-lockout.
-- **File locking** – `flock` prevents simultaneous executions that could corrupt state.
-- **Transactional backups** – previous configuration files are kept until the new rules are successfully loaded.
+- **Idempotent detection** - rerunning `apply` is safe; if the include line already exists it will not be duplicated (Linux).
+- **nftables syntax validation** - rules are compiled with `nft -c` before being installed (Linux).
+- **SSH guardrails** - if your SSH port is 80 or 443, the script aborts to avoid self-lockout (Linux).
+- **File locking** - `flock` prevents simultaneous executions that could corrupt state (Linux).
+- **Transactional backups** - previous configuration files are kept until the new rules are successfully loaded (Linux).
+- **Firewall mutex** - global named mutex prevents concurrent runs (Windows).
 
 ---
 
@@ -148,6 +180,8 @@ sudo systemctl daemon-reload
 sudo systemctl enable --now cloudflare-origin-lock-update.timer
 ```
 
+Windows: create a scheduled task that runs `cloudflare-origin-lock.bat update` daily with highest privileges.
+
 ---
 
 ## Troubleshooting
@@ -163,6 +197,7 @@ If everything appears correct but traffic still fails, run `sudo nft list rulese
 
 ## Removal
 
+**Linux**
 1. Run `sudo ./cloudflare-origin-lock.sh revert`.
 2. Delete the generated files if desired:
    ```bash
@@ -171,6 +206,10 @@ If everything appears correct but traffic still fails, run `sudo nft list rulese
    sudo rm -rf /var/lib/cloudflare-origin-lock
    ```
 3. Optionally remove the script itself.
+
+**Windows**
+1. Run `.\cloudflare-origin-lock.bat revert` in an elevated shell.
+2. Optionally delete `cloudflare-origin-lock.ps1`, `cloudflare-origin-lock.bat`, and `C:\ProgramData\Cloudflare-Origin-Lock`.
 
 ---
 
