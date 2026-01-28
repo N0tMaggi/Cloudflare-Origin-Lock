@@ -15,6 +15,39 @@
 
 ---
 
+## Visual Overview
+
+This flow shows what the scripts enforce when `apply` is run:
+
+```mermaid
+flowchart LR
+    Visitor([Public internet visitor]) -->|HTTPS 80/443| CF{Cloudflare edge}
+    CF -->|Cloudflare CIDRs only| FW[(Origin firewall rules)]
+    FW --> APP[Your origin]
+    Visitor -.-x FW
+    classDef default fill:#111827,stroke:#94a3b8,color:#e5e7eb;
+    classDef accent fill:#0ea5e9,stroke:#0284c7,color:#0b172a;
+    classDef blocked stroke:#ef4444,color:#ef4444;
+    class CF accent;
+    class FW accent;
+    class Visitor blocked;
+```
+
+- The dashed red line illustrates that direct hits to the origin from the internet are blocked.
+- The solid blue path shows traffic that keeps the Cloudflare proxy in front of the origin.
+
+---
+
+
+[![CF-only ingress](https://img.shields.io/badge/Ingress-Cloudflare_only-orange?logo=cloudflare&logoColor=white)](#)
+[![Linux nftables](https://img.shields.io/badge/Linux-nftables-0f52ba?logo=linux&logoColor=white)](#)
+[![Windows Firewall](https://img.shields.io/badge/Windows-Defender_Firewall-0078d4?logo=windows&logoColor=white)](#)
+[![Safe apply/update/revert](https://img.shields.io/badge/Safety-apply%2Fupdate%2Frevert-green?logo=shield&logoColor=white)](#)
+[![SSH lockout prevention](https://img.shields.io/badge/SSH-lockout_prevention-yellow?logo=ssh&logoColor=white)](#)
+[![Automatable updates](https://img.shields.io/badge/Updates-automatable-blue?logo=automation&logoColor=white)](#)
+
+---
+
 ## Requirements
 
 <details>
